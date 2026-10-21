@@ -2,7 +2,7 @@
 
 **A private, always-on second brain that remembers your life, learns reusable skills and runs errands, with your data on your own server.**
 
-[![CI](https://github.com/OWNER/muis-os-lite/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+[![CI](https://github.com/muisdevop/muis-os-lite/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
 
@@ -64,7 +64,7 @@ Check the live list with `GET https://api.tokenfactory.nebius.com/v1/models`.
 ## Quickstart
 
 ```bash
-git clone https://github.com/OWNER/muis-os-lite.git && cd muis-os-lite
+git clone https://github.com/muisdevop/muis-os-lite.git && cd muis-os-lite
 cp .env.example .env          # add NEBIUS_API_KEY and TAVILY_API_KEY
 docker compose up --build     # API on :8000, Qdrant on :6333
 ```
