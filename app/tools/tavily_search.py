@@ -27,6 +27,7 @@ def tavily_search(
     max_results: int = 5,
     api_key: str | None = None,
     client: Any | None = None,
+    topic: str | None = None,
 ) -> dict[str, Any]:
     if client is None:
         key = api_key or os.environ.get("TAVILY_API_KEY", "")
@@ -36,7 +37,14 @@ def tavily_search(
 
         client = TavilyClient(api_key=key)
 
-    raw = client.search(query=query, max_results=max_results, include_answer=True)
+    try:
+        max_results = max(1, min(int(max_results), 10))
+    except (TypeError, ValueError):
+        max_results = 5
+    kwargs: dict[str, Any] = {"query": query, "max_results": max_results, "include_answer": True}
+    if topic:
+        kwargs["topic"] = topic
+    raw = client.search(**kwargs)
     results = [
         {
             "title": r.get("title", ""),

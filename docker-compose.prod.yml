@@ -1,0 +1,22 @@
+# Production overlay: Caddy terminates HTTPS (automatic Let's Encrypt) in front of the api.
+# Used by scripts/deploy.sh:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  caddy:
+    image: caddy:2
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile.local:/etc/caddy/Caddyfile:ro   # written by scripts/deploy.sh
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

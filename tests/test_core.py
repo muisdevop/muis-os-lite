@@ -6,7 +6,6 @@ from app.config import DEFAULT_BASE_URL, DEFAULT_MODEL_FAST, DEFAULT_MODEL_PLAN,
 from app.llm import LLM, strip_think
 from app.scheduler import next_run
 from app.skills.loader import SkillLibrary, parse_skill, slugify
-from app.tools.integrations import STUB_TOOLS
 from app.tools.tavily_search import tavily_search
 from tests.conftest import FakeOpenAI, FakeTavily, completion
 
@@ -91,7 +90,9 @@ def test_tavily_search_shapes_results():
     fake = FakeTavily()
     out = tavily_search("nemotron", max_results=3, client=fake)
     assert fake.calls[0] == {"query": "nemotron", "max_results": 3, "include_answer": True}
-    assert out["answer"].startswith("Nemotron")
+    tavily_search("x", 50, client=fake, topic="news")
+    assert fake.calls[1]["max_results"] == 10 and fake.calls[1]["topic"] == "news"
+    assert "Nemotron" in out["answer"]
     assert out["results"][0]["url"] == "https://example.com/nemotron"
     assert len(out["results"][0]["content"]) == 500
 
@@ -101,13 +102,83 @@ def test_tavily_search_without_key(monkeypatch):
     assert "error" in tavily_search("x")
 
 
-def test_integration_stubs_are_todo():
-    for fn in STUB_TOOLS.values():
-        assert fn.__name__ in STUB_TOOLS
-    assert STUB_TOOLS["gmail_search"]("from:boss")["status"] == "not_implemented"
-
-
 def test_scheduler_next_run():
     now = datetime(2026, 10, 21, 2, 0, tzinfo=timezone.utc)  # 07:00 PKT
     assert next_run(now, "08:00").hour == 8 and next_run(now, "08:00").day == 21
     assert next_run(now, "06:00").day == 22
+
+
+def test_llm_base_url_fallback_and_extra_body(monkeypatch):
+    monkeypatch.setenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+    monkeypatch.setenv("LLM_API_KEY", "k")
+    monkeypatch.setenv("LLM_EXTRA_BODY", '{"chat_template_kwargs": {"enable_thinking": false}}')
+    s = get_settings()
+    assert s.nebius_base_url.startswith("https://generativelanguage")
+    assert s.llm_configured and s.provider_label == "OpenAI-compatible"
+    client = FakeOpenAI([completion("ok")])
+    LLM(s, client=client).complete("hi")
+    assert client.chat.completions.requests[0]["extra_body"] == {
+        "chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_parse_json_object():
+    from app.llm import parse_json_object
+
+    assert parse_json_object('Sure ```json\n{"a": {"b": 1}}\n``` done') == {"a": {"b": 1}}
+    assert parse_json_object("<think>{bad}</think> {\"save\": false}") == {"save": False}
+    assert parse_json_object("nothing here") == {}
+
+
+def test_local_embedder_recall(tmp_path):
+    from app.memory import MemoryStore, local_embed
+
+    vecs = local_embed(["hello world", ""])
+    assert len(vecs[0]) == 1024 and abs(sum(v * v for v in vecs[0]) - 1) < 1e-6
+    mem = MemoryStore(local_embed, url="", path=tmp_path / "q", collection="t")
+    mem.add("My sister Ayesha's birthday is on March 3", kind="person")
+    mem.add("The car needs an oil change in December", kind="plan")
+    assert "Ayesha" in mem.recall("when is Ayesha's birthday", k=1)[0]["text"]
+    assert mem.count() == 2 and mem.mode == "embedded (disk)"
+    mem.client.close()
+
+
+def test_qdrant_server_down_falls_back_to_memory():
+    from app.memory import MemoryStore
+    from tests.conftest import fake_embed
+
+    mem = MemoryStore(fake_embed, url="http://127.0.0.1:9", collection="t", connect_retries=1)
+    mem.add("still works")
+    assert mem.mode == "in-memory (fallback)" and mem.count() == 1
+
+
+def test_skill_edit_and_delete(tmp_path):
+    lib = SkillLibrary(tmp_path)
+    lib.save("plan-trip", "Plan a trip", ["Ask dates", "Search flights"], ["trip"], source="learned")
+    md = lib.get("plan-trip").to_markdown()
+    assert "source: learned" in md and "created:" in md
+    edited = lib.write_markdown("plan-trip", md.replace("Search flights", "Search trains"))
+    assert "trains" in edited.body and edited.source == "learned"
+    with pytest.raises(KeyError):
+        lib.write_markdown("nope", "x")
+    with pytest.raises(ValueError):
+        lib.write_markdown("plan-trip", "---\nname: plan-trip\n---\n")
+    assert lib.delete("plan-trip") and not lib.delete("plan-trip")
+
+
+def test_skill_match_needs_real_overlap(tmp_path):
+    lib = SkillLibrary(tmp_path)
+    lib.save("compare-gpu-prices", "Compare GPU cloud prices", ["x"], ["gpu price"])
+    assert lib.match("hello there") == []
+    assert lib.match("compare prices of gpus")[0].name == "compare-gpu-prices"
+
+
+def test_scheduler_start_and_bad_time():
+    from app.scheduler import parse_hhmm, start_scheduler
+
+    assert parse_hhmm("25:99") == (8, 0)
+    sched = start_scheduler(lambda: None, "07:30", "Asia/Karachi")
+    try:
+        job = sched.get_job("daily_brief")
+        assert job is not None and job.next_run_time.hour == 7 and job.next_run_time.minute == 30
+    finally:
+        sched.shutdown(wait=False)

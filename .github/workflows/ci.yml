@@ -14,8 +14,49 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-dev.txt
+          cache-dependency-path: requirements*.txt
       - name: Install
         run: pip install -r requirements-dev.txt
-      - name: Test (offline, external APIs mocked)
-        run: pytest
+      - name: Test (offline, LLM / Tavily / Google / Qdrant mocked)
+        run: pytest -v
+      - name: Deploy script syntax
+        run: bash -n scripts/deploy.sh
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose up (API + Qdrant, no keys)
+        run: docker compose up -d --build
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 40); do
+            curl -fsS http://127.0.0.1:8000/health && exit 0
+            sleep 3
+          done
+          docker compose logs api
+          exit 1
+      - name: End-to-end against real Qdrant
+        run: |
+          set -e
+          curl -fsS http://127.0.0.1:8000/api/health | tee health.json
+          python3 -c "import json;h=json.load(open('health.json'));assert h['memory']['backend']=='server',h;assert h['memory']['ok']"
+          curl -fsS -X POST http://127.0.0.1:8000/api/memory -H 'content-type: application/json' \
+            -d '{"text":"My sister Ayesha birthday is on March 3","kind":"person"}'
+          curl -fsS "http://127.0.0.1:8000/api/memory?q=sister%20birthday" | tee mem.json
+          python3 -c "import json;m=json.load(open('mem.json'));assert 'Ayesha' in m['memories'][0]['text']"
+          curl -fsS http://127.0.0.1:8000/api/skills | grep -q daily-brief
+          curl -fsS -X POST http://127.0.0.1:8000/api/brief | grep -q Ayesha
+          curl -fsS http://127.0.0.1:8000/ | grep -q "MUIS OS Lite"
+          curl -sS -N -X POST http://127.0.0.1:8000/api/chat/stream -H 'content-type: application/json' \
+            -d '{"message":"hi"}' | grep -q llm_unavailable
+      - name: Memory survives a restart (volumes)
+        run: |
+          docker compose restart api qdrant
+          for i in $(seq 1 40); do curl -fsS http://127.0.0.1:8000/health >/dev/null && break; sleep 3; done
+          sleep 3
+          curl -fsS "http://127.0.0.1:8000/api/memory" | grep -q Ayesha
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
