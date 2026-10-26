@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _WORD_RE = re.compile(r"[a-z0-9]+")
+_NUM_RE = re.compile(r"^\s*(\d+[.)]|[-*])\s*")
 
 
 def slugify(name: str) -> str:
@@ -32,6 +34,9 @@ class Skill:
     body: str
     triggers: list[str] = field(default_factory=list)
     path: Path | None = None
+    source: str = "bundled"  # bundled | user | learned
+    created: str = ""
+    uses: int = 0
 
     def to_markdown(self) -> str:
         lines = [
@@ -39,17 +44,25 @@ class Skill:
             f"name: {self.name}",
             f"description: {self.description}",
             f"triggers: {', '.join(self.triggers)}",
-            "---",
-            "",
-            self.body.strip(),
-            "",
         ]
+        if self.source != "bundled":
+            lines.append(f"source: {self.source}")
+        if self.created:
+            lines.append(f"created: {self.created}")
+        lines += ["---", "", self.body.strip(), ""]
         return "\n".join(lines)
 
     def as_dict(self, with_body: bool = False) -> dict:
-        data = {"name": self.name, "description": self.description, "triggers": self.triggers}
+        data = {
+            "name": self.name,
+            "description": self.description,
+            "triggers": self.triggers,
+            "source": self.source,
+            "created": self.created,
+        }
         if with_body:
             data["body"] = self.body
+            data["markdown"] = self.to_markdown()
         return data
 
 
@@ -72,6 +85,8 @@ def parse_skill(text: str, path: Path | None = None) -> Skill:
         body=body.strip(),
         triggers=triggers,
         path=path,
+        source=meta.get("source", "bundled") or "bundled",
+        created=meta.get("created", ""),
     )
 
 
@@ -91,16 +106,17 @@ class SkillLibrary:
         slug = slugify(name)
         return next((s for s in self.all() if s.name == slug), None)
 
-    def match(self, query: str, limit: int = 2) -> list[Skill]:
-        """Cheap keyword match: triggers, name and description overlap with the query."""
+    def match(self, query: str, limit: int = 2, min_score: int = 2) -> list[Skill]:
+        """Cheap keyword match: trigger phrases, plus word overlap with name/description/triggers."""
         q = query.lower()
-        q_words = set(_WORD_RE.findall(q))
+        q_stems = {w[:5] for w in _WORD_RE.findall(q) if len(w) > 3}
         scored: list[tuple[int, Skill]] = []
         for skill in self.all():
             score = sum(3 for t in skill.triggers if t.lower() in q)
-            vocab = set(_WORD_RE.findall(f"{skill.name} {skill.description}".lower()))
-            score += len({w for w in q_words & vocab if len(w) > 3})
-            if score:
+            text = f"{skill.name} {skill.description} {' '.join(skill.triggers)}".lower()
+            vocab = {w[:5] for w in _WORD_RE.findall(text) if len(w) > 3}
+            score += len(q_stems & vocab)
+            if score >= min_score:
                 scored.append((score, skill))
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return [s for _, s in scored[:limit]]
@@ -118,6 +134,7 @@ class SkillLibrary:
         steps: list[str] | str,
         triggers: list[str] | None = None,
         overwrite: bool = False,
+        source: str = "user",
     ) -> Skill:
         slug = slugify(name)
         path = self.directory / f"{slug}.md"
@@ -126,8 +143,33 @@ class SkillLibrary:
         if isinstance(steps, str):
             body = steps.strip()
         else:
-            body = "\n".join(f"{i}. {step.strip()}" for i, step in enumerate(steps, 1))
-        skill = Skill(slug, description.strip(), body, triggers or [], path)
+            clean = [_NUM_RE.sub("", step).strip() for step in steps]
+            body = "\n".join(f"{i}. {step}" for i, step in enumerate([c for c in clean if c], 1))
+        triggers = [t.strip() for t in (triggers or []) if t and t.strip()]
+        created = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        skill = Skill(slug, " ".join(description.split()), body, triggers, path, source, created)
         self.directory.mkdir(parents=True, exist_ok=True)
         path.write_text(skill.to_markdown(), encoding="utf-8")
         return skill
+
+    def write_markdown(self, name: str, markdown: str) -> Skill:
+        """Replace a skill with edited markdown (front matter + steps). Name stays fixed."""
+        existing = self.get(name)
+        if existing is None or existing.path is None:
+            raise KeyError(name)
+        parsed = parse_skill(markdown, existing.path)
+        parsed.name = existing.name
+        if not parsed.body:
+            raise ValueError("skill body is empty")
+        parsed.created = parsed.created or existing.created
+        if parsed.source == "bundled" and existing.source != "bundled":
+            parsed.source = existing.source
+        existing.path.write_text(parsed.to_markdown(), encoding="utf-8")
+        return parsed
+
+    def delete(self, name: str) -> bool:
+        skill = self.get(name)
+        if skill is None or skill.path is None:
+            return False
+        skill.path.unlink()
+        return True

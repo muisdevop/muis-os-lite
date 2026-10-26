@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1117">
+  <title>MUIS OS Lite</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='44' fill='%2376b900'/><text x='50' y='66' font-size='46' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>M</text></svg>">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div id="login" class="login hidden">
+    <form id="login-form" class="login-card">
+      <div class="brand-mark big">M</div>
+      <h1>MUIS OS Lite</h1>
+      <p class="muted">Your private second brain. Enter the password to continue.</p>
+      <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" required>
+      <button class="btn primary" type="submit">Unlock</button>
+      <p id="login-error" class="error-text"></p>
+    </form>
+  </div>
+
+  <div id="shell" class="shell">
+    <nav class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">M</div>
+        <div>
+          <div class="brand-name">MUIS OS Lite</div>
+          <div class="brand-sub">your private second brain</div>
+        </div>
+      </div>
+      <div class="nav">
+        <button class="nav-item active" data-view="chat"><span class="ico">💬</span><span>Chat</span></button>
+        <button class="nav-item" data-view="memory"><span class="ico">🧠</span><span>Memory</span></button>
+        <button class="nav-item" data-view="skills"><span class="ico">🛠️</span><span>Skills</span><span id="skills-badge" class="badge hidden">new</span></button>
+        <button class="nav-item" data-view="brief"><span class="ico">☀️</span><span>Brief</span></button>
+        <button class="nav-item" data-view="settings"><span class="ico">⚙️</span><span>Settings</span></button>
+      </div>
+      <div class="sidebar-section" id="conv-section">
+        <div class="section-head">
+          <span>Conversations</span>
+          <button class="icon-btn" id="new-chat" title="New chat">+</button>
+        </div>
+        <div id="conv-list" class="conv-list"></div>
+      </div>
+      <div class="sidebar-foot">
+        <span id="status-dot" class="dot"></span><span id="status-text" class="muted small">checking…</span>
+      </div>
+    </nav>
+
+    <main class="main">
+      <!-- CHAT -->
+      <section class="view active" id="view-chat">
+        <header class="topbar">
+          <button class="icon-btn mobile-only" id="toggle-convs" title="Conversations">☰</button>
+          <h2 id="chat-title">New chat</h2>
+          <div class="topbar-right"><span class="pill" id="model-pill">Nemotron 3 Super</span></div>
+        </header>
+        <div id="messages" class="messages">
+          <div class="empty" id="chat-empty">
+            <div class="brand-mark big">M</div>
+            <h3>What's on your mind?</h3>
+            <p class="muted">I remember what you tell me, search the live web, and learn reusable skills as we go.</p>
+            <div class="suggestions">
+              <button class="chip" data-prompt="Remember that my sister Ayesha's birthday is on March 3 and she loves green tea.">Remember a fact</button>
+              <button class="chip" data-prompt="What's the latest news on NVIDIA Nemotron? Give me 3 bullets with sources.">Research the web</button>
+              <button class="chip" data-prompt="Compare the price of the iPhone 17 in Pakistan at two shops and tell me the cheapest.">Run an errand</button>
+              <button class="chip" data-prompt="What do you know about me so far?">What do you know?</button>
+            </div>
+          </div>
+        </div>
+        <form id="composer" class="composer">
+          <textarea id="input" rows="1" placeholder="Message MUIS…" title="Enter to send, Shift+Enter for a new line"></textarea>
+          <button class="btn primary send" id="send" type="submit" title="Send">➤</button>
+        </form>
+      </section>
+
+      <!-- MEMORY -->
+      <section class="view" id="view-memory">
+        <header class="topbar"><h2>Memory</h2><div class="topbar-right"><span class="pill" id="mem-count">0 notes</span></div></header>
+        <div class="page">
+          <form id="mem-add" class="card row-form">
+            <input id="mem-text" placeholder="Add something to remember… e.g. My dentist is Dr. Khan in Lahore" required>
+            <select id="mem-kind">
+              <option value="note">note</option><option value="person">person</option>
+              <option value="preference">preference</option><option value="plan">plan</option>
+              <option value="project">project</option>
+            </select>
+            <button class="btn primary" type="submit">Remember</button>
+          </form>
+          <form id="mem-search" class="search-row">
+            <input id="mem-q" type="search" placeholder="Search your memory by meaning…">
+            <button class="btn" type="submit">Search</button>
+            <button class="btn ghost" type="button" id="mem-clear">Show all</button>
+          </form>
+          <div id="mem-list" class="list"></div>
+        </div>
+      </section>
+
+      <!-- SKILLS -->
+      <section class="view" id="view-skills">
+        <header class="topbar"><h2>Skills</h2><div class="topbar-right"><span class="pill muted-pill">markdown playbooks it learned</span></div></header>
+        <div class="page split">
+          <div id="skill-list" class="list skill-list"></div>
+          <div class="card skill-detail" id="skill-detail">
+            <p class="muted">Select a skill to view or edit it. New skills appear here automatically after multi-step tasks.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- BRIEF -->
+      <section class="view" id="view-brief">
+        <header class="topbar"><h2>Daily brief</h2>
+          <div class="topbar-right"><button class="btn primary" id="brief-run">Generate now</button></div>
+        </header>
+        <div class="page">
+          <div class="card">
+            <div class="section-head"><span>Topics I follow for you</span><span class="muted small" id="brief-schedule"></span></div>
+            <form id="topic-add" class="row-form">
+              <input id="topic-text" placeholder="Add a news topic, e.g. Pakistan tech startups" required>
+              <button class="btn" type="submit">Follow</button>
+            </form>
+            <div id="topic-list" class="chips"></div>
+          </div>
+          <div id="brief-current" class="card brief-card"><p class="muted">No brief yet. Press “Generate now”.</p></div>
+          <h3 class="sub">History</h3>
+          <div id="brief-history" class="list"></div>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view" id="view-settings">
+        <header class="topbar"><h2>Settings &amp; health</h2>
+          <div class="topbar-right"><button class="btn ghost" id="logout" title="Log out">Log out</button></div>
+        </header>
+        <div class="page">
+          <div id="providers" class="grid"></div>
+          <div class="card">
+            <h3>Models</h3>
+            <div id="models" class="kv"></div>
+          </div>
+          <div class="card">
+            <h3>Tools the agent can call</h3>
+            <div id="tools" class="chips"></div>
+          </div>
+          <div class="card muted small">
+            Configure everything with environment variables in <code>.env</code> (see <code>.env.example</code>) and restart.
+            Your memory lives in your own Qdrant, your skills are markdown files on your server, and chats are in a local SQLite file.
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-view="chat"><span class="ico">💬</span><span>Chat</span></button>
+      <button class="nav-item" data-view="memory"><span class="ico">🧠</span><span>Memory</span></button>
+      <button class="nav-item" data-view="skills"><span class="ico">🛠️</span><span>Skills</span></button>
+      <button class="nav-item" data-view="brief"><span class="ico">☀️</span><span>Brief</span></button>
+      <button class="nav-item" data-view="settings"><span class="ico">⚙️</span><span>Settings</span></button>
+    </nav>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
